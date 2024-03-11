@@ -1,14 +1,12 @@
-﻿using System.Security.Cryptography;
+﻿using Newtonsoft.Json;
+using System.Security.Cryptography;
 using System.Text;
-using System.Threading.Channels;
-using Microsoft.VisualBasic.FileIO;
-using Newtonsoft.Json;
 
 class Program
 {
 	static void Main(string[] args)
 	{
-		start:
+	start:
 
 		FileIO data = new();
 
@@ -25,27 +23,88 @@ class Program
 		switch (opSelection)
 		{
 			case 1:
-				Console.Write("Type in your cipher key: ");
-				string strKey = Console.ReadLine();
-				data.key = Encoding.UTF8.GetBytes(strKey);
+				Console.WriteLine("0. standard\n1. Cbc\n2. Cbf\n3. Ecb\n");
+				Console.WriteLine("Select your encryption mode: ");
+				data.mode = int.Parse(Console.ReadLine());
 
-				make128b(ref data.key);
-				
-				Console.Write("Type in your initialization vector: ");
-				string strIv = Console.ReadLine();
-				data.iv = Encoding.UTF8.GetBytes(strIv);
+				switch (data.mode)
+				{
+					case 0:
+						Console.Write("Type in your cipher key: ");
+						string strKey = Console.ReadLine();
+						data.key = Encoding.UTF8.GetBytes(strKey);
 
-				make128b(ref data.iv);
+						make128b(ref data.key);
 
-				Console.Write("Type in the word(-s) you'd like to be encrypted: ");
-				string simpleText = Console.ReadLine();
+						Console.Write("Type in your initialization vector: ");
+						string strIv = Console.ReadLine();
+						data.iv = Encoding.UTF8.GetBytes(strIv);
 
-				data.encryptedText = Encrypt(simpleText, data.key, data.iv);
+						make128b(ref data.iv);
 
-				string input = JsonConvert.SerializeObject(data);
-				File.WriteAllText(dfv, input);
+						Console.Write("Type in the word(-s) you'd like to be encrypted: ");
+						string simpleText = Console.ReadLine();
 
-				Console.WriteLine(data.encryptedText);
+						data.encryptedText = Encrypt(simpleText, data.key, data.iv);
+
+						string input = JsonConvert.SerializeObject(data);
+						File.WriteAllText(dfv, input);
+
+						break;
+
+					case 1:
+						Console.Write("Type in your initialization vector: ");
+						strIv = Console.ReadLine();
+						data.iv = Encoding.UTF8.GetBytes(strIv);
+
+						make128b(ref data.iv);
+
+						Console.Write("Type in the word(-s) you'd like to be encrypted: ");
+						simpleText = Console.ReadLine();
+
+						data.encryptedText = EncryptCbc(simpleText, data.iv);
+
+						input = JsonConvert.SerializeObject(data);
+						File.WriteAllText(dfv, input);
+						break;
+
+					case 2:
+
+						Console.Write("Type in your initialization vector: ");
+						strIv = Console.ReadLine();
+						data.iv = Encoding.UTF8.GetBytes(strIv);
+
+						make128b(ref data.iv);
+
+						Console.Write("Type in the word(-s) you'd like to be encrypted: ");
+						simpleText = Console.ReadLine();
+
+						data.encryptedText = EncryptCfb(simpleText, data.iv);
+
+						input = JsonConvert.SerializeObject(data);
+						File.WriteAllText(dfv, input);
+						break;
+
+					case 3:
+
+						Console.Write("Type in the word(-s) you'd like to be encrypted: ");
+						simpleText = Console.ReadLine();
+
+						data.encryptedText = EncryptEcb(simpleText);
+
+						input = JsonConvert.SerializeObject(data);
+						File.WriteAllText(dfv, input);
+						break;
+
+					default:
+						Console.WriteLine("The mode you've selected doesn't exist, please try again.");
+						goto start;
+				}
+
+				foreach (var garbage in data.encryptedText)
+					Console.Write($"{garbage} ");
+
+				Console.Write("\n\n");
 				break;
 
 			case 2:
@@ -57,10 +116,41 @@ class Program
 
 				data = JsonConvert.DeserializeObject<FileIO>(File.ReadAllText(dfv));
 
-				simpleText = Decrypt(data.encryptedText, data.key, data.iv);
+				switch (data.mode)
+				{
+					case 0:
 
-				Console.WriteLine(simpleText);
+						string simpleText = Decrypt(data.encryptedText, data.key, data.iv);
 
+						Console.WriteLine(simpleText);
+
+						break;
+
+					case 1:
+
+						simpleText = Encoding.UTF8.GetString(DecryptCbc(data.encryptedText, data.iv));
+
+						Console.WriteLine(simpleText);
+						break;
+
+					case 2:
+
+						simpleText = Encoding.UTF8.GetString(DecryptCfb(data.encryptedText, data.iv));
+
+						Console.WriteLine(simpleText);
+						break;
+
+					case 3:
+
+						simpleText = Encoding.UTF8.GetString(DecryptEcb(data.encryptedText));
+
+						Console.WriteLine(simpleText);
+						break;
+
+					default:
+						Console.WriteLine("The mode you've selected doesn't exist, please try again.");
+						break;
+				}
 				break;
 
 			case 0:
@@ -104,7 +194,7 @@ class Program
 		using (Aes aes = Aes.Create())
 		{
 			ICryptoTransform decryptor = aes.CreateDecryptor(key, iv);
-			using(MemoryStream memoryStream = new MemoryStream(cipheredText))
+			using (MemoryStream memoryStream = new MemoryStream(cipheredText))
 			{
 				using (CryptoStream cryptoStream = new CryptoStream(memoryStream, decryptor, CryptoStreamMode.Read))
 				{
@@ -118,19 +208,75 @@ class Program
 		return simpleText;
 	}
 
+	static byte[] EncryptCbc(string simpleText, byte[] iv)
+	{
+		using (Aes aes = Aes.Create())
+		{
+			return aes.EncryptCbc(Encoding.UTF8.GetBytes(simpleText), iv, PaddingMode.Zeros);
+
+		}
+	}
+
+	static byte[] DecryptCbc(byte[] cipheredText, byte[] iv)
+	{
+		using (Aes aes = Aes.Create())
+		{
+			return aes.DecryptCbc(cipheredText, iv, PaddingMode.Zeros);
+
+		}
+	}
+
+	static byte[] EncryptCfb(string simpleText, byte[] iv)
+	{
+		using (Aes aes = Aes.Create())
+		{
+			return aes.EncryptCfb(Encoding.UTF8.GetBytes(simpleText), iv);
+
+		}
+	}
+
+	static byte[] DecryptCfb(byte[] cipheredText, byte[] iv)
+	{
+		using (Aes aes = Aes.Create())
+		{
+			return aes.DecryptCfb(cipheredText, iv);
+
+		}
+	}
+
+	static byte[] EncryptEcb(string simpleText)
+	{
+		using (Aes aes = Aes.Create())
+		{
+			return aes.EncryptEcb(Encoding.UTF8.GetBytes(simpleText), PaddingMode.None);
+
+		}
+	}
+
+	static byte[] DecryptEcb(byte[] cipheredText)
+	{
+		using (Aes aes = Aes.Create())
+		{
+			return aes.DecryptEcb(cipheredText, PaddingMode.None);
+
+		}
+	}
+
 	static void make128b(ref byte[] bytes)
 	{
 		var outputBytes = new List<byte>();
 
-		for(int i = 0; i < 16; i++)
+		for (int i = 0; i < 16; i++)
 			outputBytes.Add(bytes[i % bytes.Length]);
 
 		bytes = outputBytes.ToArray();
 	}
 }
 
+[Serializable]
 class FileIO
 {
+	public int mode;
 	public byte[] key;
 	public byte[] iv;
 	public byte[] encryptedText;
