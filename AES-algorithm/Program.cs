@@ -4,11 +4,19 @@ using System.Text;
 
 class Program
 {
+	public static FileIO data = new();
+
+	enum modes
+	{
+		CBC = 1,
+		ECB = 2,
+		CFB = 4
+	}
+
 	static void Main(string[] args)
 	{
 	start:
-
-		FileIO data = new();
+		//aes.Mode = CipherMode.CBC;--------------------------------------------------------------------------------------------------
 
 		Console.WriteLine("AES algorithm encryption/decryption.");
 		Console.WriteLine("1. Encrypt your text.");
@@ -23,83 +31,25 @@ class Program
 		switch (opSelection)
 		{
 			case 1:
-				Console.WriteLine("0. standard\n1. Cbc\n2. Cbf\n3. Ecb\n");
+				Console.WriteLine("1. Cbc\n2. Ecb\n3. Cfb");
 				Console.WriteLine("Select your encryption mode: ");
-				data.mode = int.Parse(Console.ReadLine());
+				data.mode = Math.Clamp(int.Parse(Console.ReadLine()), 1, 3);
 
-				switch (data.mode)
-				{
-					case 0:
-						Console.Write("Type in your cipher key: ");
-						string strKey = Console.ReadLine();
-						data.key = Encoding.UTF8.GetBytes(strKey);
+				data.mode = (int)((CipherMode)(int)(Enum.GetValues(typeof(modes)).GetValue(data.mode - 1) ?? 1));
 
-						make128b(ref data.key);
+				Console.Write("Type in your cipher key: ");
+				string strKey = Console.ReadLine();
+				data.key = Encoding.UTF8.GetBytes(strKey);
 
-						Console.Write("Type in your initialization vector: ");
-						string strIv = Console.ReadLine();
-						data.iv = Encoding.UTF8.GetBytes(strIv);
+				make128b(ref data.key);
 
-						make128b(ref data.iv);
+				Console.Write("Type in the word(-s) you'd like to be encrypted: ");
+				string simpleText = Console.ReadLine();
 
-						Console.Write("Type in the word(-s) you'd like to be encrypted: ");
-						string simpleText = Console.ReadLine();
+				data.encryptedText = Encrypt(simpleText, data.key, data.mode);
 
-						data.encryptedText = Encrypt(simpleText, data.key, data.iv);
-
-						string input = JsonConvert.SerializeObject(data);
-						File.WriteAllText(dfv, input);
-
-						break;
-
-					case 1:
-						Console.Write("Type in your initialization vector: ");
-						strIv = Console.ReadLine();
-						data.iv = Encoding.UTF8.GetBytes(strIv);
-
-						make128b(ref data.iv);
-
-						Console.Write("Type in the word(-s) you'd like to be encrypted: ");
-						simpleText = Console.ReadLine();
-
-						data.encryptedText = EncryptCbc(simpleText, data.iv);
-
-						input = JsonConvert.SerializeObject(data);
-						File.WriteAllText(dfv, input);
-						break;
-
-					case 2:
-
-						Console.Write("Type in your initialization vector: ");
-						strIv = Console.ReadLine();
-						data.iv = Encoding.UTF8.GetBytes(strIv);
-
-						make128b(ref data.iv);
-
-						Console.Write("Type in the word(-s) you'd like to be encrypted: ");
-						simpleText = Console.ReadLine();
-
-						data.encryptedText = EncryptCfb(simpleText, data.iv);
-
-						input = JsonConvert.SerializeObject(data);
-						File.WriteAllText(dfv, input);
-						break;
-
-					case 3:
-
-						Console.Write("Type in the word(-s) you'd like to be encrypted: ");
-						simpleText = Console.ReadLine();
-
-						data.encryptedText = EncryptEcb(simpleText);
-
-						input = JsonConvert.SerializeObject(data);
-						File.WriteAllText(dfv, input);
-						break;
-
-					default:
-						Console.WriteLine("The mode you've selected doesn't exist, please try again.");
-						goto start;
-				}
+				string input = JsonConvert.SerializeObject(data);
+				File.WriteAllText(dfv, input);
 
 				foreach (var garbage in data.encryptedText)
 					Console.Write($"{garbage} ");
@@ -108,49 +58,25 @@ class Program
 				break;
 
 			case 2:
-				if (!File.Exists(dfv))
+				data = null;
+
+				if (File.Exists(dfv))
 				{
-					Console.WriteLine("Oopsies, it appears that you have not ecnrypted any text yet. Go do that first!");
-					break;
+					Console.Write("Saved encryption detected, would you like to decrypt it? (y/n): ");
+					if (Console.ReadLine().ToLower()[0] == 'y')
+						data = JsonConvert.DeserializeObject<FileIO>(File.ReadAllText(dfv));
 				}
 
-				data = JsonConvert.DeserializeObject<FileIO>(File.ReadAllText(dfv));
-
-				switch (data.mode)
+				
+				if(data == null)
 				{
-					case 0:
-
-						string simpleText = Decrypt(data.encryptedText, data.key, data.iv);
-
-						Console.WriteLine(simpleText);
-
-						break;
-
-					case 1:
-
-						simpleText = Encoding.UTF8.GetString(DecryptCbc(data.encryptedText, data.iv));
-
-						Console.WriteLine(simpleText);
-						break;
-
-					case 2:
-
-						simpleText = Encoding.UTF8.GetString(DecryptCfb(data.encryptedText, data.iv));
-
-						Console.WriteLine(simpleText);
-						break;
-
-					case 3:
-
-						simpleText = Encoding.UTF8.GetString(DecryptEcb(data.encryptedText));
-
-						Console.WriteLine(simpleText);
-						break;
-
-					default:
-						Console.WriteLine("The mode you've selected doesn't exist, please try again.");
-						break;
+					goto start;
 				}
+
+
+				simpleText = Decrypt(data.encryptedText, data.key, data.mode);
+
+				Console.WriteLine(simpleText);
 				break;
 
 			case 0:
@@ -165,11 +91,25 @@ class Program
 		goto start;
 	}
 
-	static byte[] Encrypt(string simpleText, byte[] key, byte[] iv)
+	static byte[] Encrypt(string simpleText, byte[] key, int mode)
 	{
 		byte[] cipheredText;
+		byte[] iv;
+
 		using (Aes aes = Aes.Create())
 		{
+			if (mode != 0)
+				aes.Mode = (CipherMode)mode;
+
+			aes.Padding = PaddingMode.PKCS7;
+
+			if (aes.Mode == CipherMode.ECB)
+				iv = new byte[] { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+			else
+				iv = aes.IV;
+
+			data.iv = iv;
+
 			ICryptoTransform encryptor = aes.CreateEncryptor(key, iv);
 			using (MemoryStream memoryStream = new MemoryStream())
 			{
@@ -188,11 +128,24 @@ class Program
 		return cipheredText;
 	}
 
-	static string Decrypt(byte[] cipheredText, byte[] key, byte[] iv)
+	static string Decrypt(byte[] cipheredText, byte[] key, int mode)
 	{
 		string simpleText = string.Empty;
+		byte[] iv;
+
 		using (Aes aes = Aes.Create())
 		{
+			if (mode != 0)
+				aes.Mode = (CipherMode)mode;
+			aes.Padding = PaddingMode.PKCS7;
+
+			if (aes.Mode == CipherMode.ECB)
+				iv = new byte[] { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+			else
+				iv = data.iv;
+
+			data.iv = iv;
+
 			ICryptoTransform decryptor = aes.CreateDecryptor(key, iv);
 			using (MemoryStream memoryStream = new MemoryStream(cipheredText))
 			{
@@ -206,60 +159,6 @@ class Program
 			}
 		}
 		return simpleText;
-	}
-
-	static byte[] EncryptCbc(string simpleText, byte[] iv)
-	{
-		using (Aes aes = Aes.Create())
-		{
-			return aes.EncryptCbc(Encoding.UTF8.GetBytes(simpleText), iv, PaddingMode.Zeros);
-
-		}
-	}
-
-	static byte[] DecryptCbc(byte[] cipheredText, byte[] iv)
-	{
-		using (Aes aes = Aes.Create())
-		{
-			return aes.DecryptCbc(cipheredText, iv, PaddingMode.Zeros);
-
-		}
-	}
-
-	static byte[] EncryptCfb(string simpleText, byte[] iv)
-	{
-		using (Aes aes = Aes.Create())
-		{
-			return aes.EncryptCfb(Encoding.UTF8.GetBytes(simpleText), iv);
-
-		}
-	}
-
-	static byte[] DecryptCfb(byte[] cipheredText, byte[] iv)
-	{
-		using (Aes aes = Aes.Create())
-		{
-			return aes.DecryptCfb(cipheredText, iv);
-
-		}
-	}
-
-	static byte[] EncryptEcb(string simpleText)
-	{
-		using (Aes aes = Aes.Create())
-		{
-			return aes.EncryptEcb(Encoding.UTF8.GetBytes(simpleText), PaddingMode.None);
-
-		}
-	}
-
-	static byte[] DecryptEcb(byte[] cipheredText)
-	{
-		using (Aes aes = Aes.Create())
-		{
-			return aes.DecryptEcb(cipheredText, PaddingMode.None);
-
-		}
 	}
 
 	static void make128b(ref byte[] bytes)
